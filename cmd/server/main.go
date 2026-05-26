@@ -3,12 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/MarunDArbaumont/learn-pub-sub-starter/internal/pubsub"
-	"github.com/MarunDArbaumont/learn-pub-sub-starter/internal/routing"
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 
 )
 
@@ -25,15 +24,41 @@ func main() {
 	if err != nil {
 		log.Fatalf("couldn't create channel from connection: %v", err)
 	}
-
-	err = pubsub.PublishJSON(connectionChan, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{
-		IsPaused: true,
-	})
-
 	fmt.Println("Successfully connected")
-	
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	<-signalChan
-	fmt.Println("\nShutting program")
+
+	_, _, err = pubsub.DeclareAndBind(
+		connection,
+		routing.ExchangePerilDirect,
+		"game_logs",
+		"game_logs.*",
+		pubsub.SimpleQueueDurable,
+	)
+	if err != nil {
+		log.Fatalf("something went wrong while declaring and binding: %v", err)
+	}
+
+	gamelogic.PrintServerHelp()
+	for ;; {
+		words := gamelogic.GetInput()
+		if len(words) < 1 {
+			continue
+		}
+			switch words[0] {
+			case "pause":
+				fmt.Println("Sending pause message")
+				err = pubsub.PublishJSON(connectionChan, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{
+					IsPaused: true,
+				})
+			case "resume":
+				fmt.Println("Sending resume message")
+				err = pubsub.PublishJSON(connectionChan, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{
+					IsPaused: false,
+				})
+			case "quit":
+				fmt.Println("Exiting")
+				return
+			default:
+				fmt.Println("Command not found")
+		}
+	}
 }
