@@ -48,10 +48,22 @@ func main() {
 	err = pubsub.SubscribeJSON(
 		connection,
 		routing.ExchangePerilTopic,
-		"army_moves." + username,
-		"army_moves.*",
+		routing.ArmyMovesPrefix + "." + username,
+		routing.ArmyMovesPrefix + ".*",
 		pubsub.SimpleQueueTransient,
-		handlerMove(gameState),
+		handlerMove(gameState, connectionChan),
+	)
+	if err != nil {
+		log.Fatalf("something went wrong while declaring and binding: %v", err)
+	}
+
+	err = pubsub.SubscribeJSON(
+		connection,
+		routing.ExchangePerilTopic,
+		"war",
+		"war.#",
+		pubsub.SimpleQueueDurable,
+		handlerWar(gameState),
 	)
 	if err != nil {
 		log.Fatalf("something went wrong while declaring and binding: %v", err)
@@ -70,7 +82,12 @@ func main() {
 				}
 			case "move":
 				armyMove, err := gameState.CommandMove(words)
-				err = pubsub.PublishJSON(connectionChan, routing.ExchangePerilTopic, "army_moves." + username, armyMove)
+				err = pubsub.PublishJSON(
+					connectionChan,
+					routing.ExchangePerilTopic,
+					"army_moves." + username,
+					armyMove,
+				)
 				if err != nil {
 					fmt.Printf("error while moving unit: %v\n", err)
 				}

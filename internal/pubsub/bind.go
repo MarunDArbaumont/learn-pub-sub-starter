@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 )
 
 type SimpleQueueType int
@@ -12,6 +13,14 @@ type SimpleQueueType int
 const (
 	SimpleQueueDurable SimpleQueueType = iota
 	SimpleQueueTransient
+)
+
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
 )
 
 func DeclareAndBind(
@@ -26,7 +35,9 @@ func DeclareAndBind(
 		return &amqp.Channel{}, amqp.Queue{}, fmt.Errorf("error while creating channel: %v", err)
 	}
 
-	queue, err := channel.QueueDeclare(queueName, queueType == SimpleQueueDurable, queueType == SimpleQueueTransient, queueType == SimpleQueueTransient, false, nil)
+	queue, err := channel.QueueDeclare(queueName, queueType == SimpleQueueDurable, queueType == SimpleQueueTransient, queueType == SimpleQueueTransient, false, amqp.Table{
+    	"x-dead-letter-exchange": routing.ExchangePerilDead,
+	})
 	if err != nil {
 		return &amqp.Channel{}, amqp.Queue{}, fmt.Errorf("error while creating queue: %v", err)
 	}
@@ -45,7 +56,7 @@ func SubscribeJSON[T any](
     queueName,
     key string,
     queueType SimpleQueueType,
-    handler func(T),
+    handler func(T) AckType,
 ) error {
 	channel, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
@@ -58,13 +69,21 @@ func SubscribeJSON[T any](
 	}
 
 	go func() error {
-		for delChan := range consume {
+		for msg := range consume {
 			var data T
-			if err := json.Unmarshal(delChan.Body, &data); err != nil {
+			if err := json.Unmarshal(msg.Body, &data); err != nil {
 				return fmt.Errorf("Error unmarshalling JSON: %v", err)
 			}
-			handler(data)
-			delChan.Ack(false)
+			ackOrNack := handler(data)
+			fmt.Printf("This was a %v\n", ackOrNack)
+			switch ackOrNack{
+			case Ack:
+				msg.Ack(false)
+			case NackRequeue:
+				msg.Nack(false, true)
+			case NackDiscard:
+				msg.Nack(false, false)
+			}
 		}
 		return nil
 	} ()
