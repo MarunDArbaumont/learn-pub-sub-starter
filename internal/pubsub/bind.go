@@ -105,6 +105,11 @@ func subscribe[T any](
 		return fmt.Errorf("errror while declaring and binding: %v", err)
 	}
 
+	err = channel.Qos(10, 0, false)
+	if err != nil {
+		return fmt.Errorf("error while limiting message fetching: %v", err)
+	}
+
 	consume, err := channel.Consume(queue.Name, "", false, false, false, false, nil)
 	if err != nil {
 		return fmt.Errorf("error while getting new delivery chan: %v", err)
@@ -115,7 +120,7 @@ func subscribe[T any](
 		for msg := range consume {
 			data, err := unmarshaller(msg.Body)
 			if err != nil {
-				fmt.Printf("Error unmarshalling JSON: %v", err)
+				fmt.Printf("Error unmarshalling: %v", err)
 				continue
 			}
 			ackOrNack := handler(data)

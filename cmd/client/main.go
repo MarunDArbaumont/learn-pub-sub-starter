@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -79,6 +81,7 @@ func main() {
 				err = gameState.CommandSpawn(words)
 				if err != nil {
 					fmt.Printf("error while spawning unit: %v\n", err)
+					continue
 				}
 			case "move":
 				armyMove, err := gameState.CommandMove(words)
@@ -90,6 +93,7 @@ func main() {
 				)
 				if err != nil {
 					fmt.Printf("error while moving unit: %v\n", err)
+					continue
 				}
 				fmt.Println("move published successfully")
 			case "status":
@@ -97,7 +101,30 @@ func main() {
 			case "help":
 				gamelogic.PrintClientHelp()
 			case "spam":
-				fmt.Println("Spamming not allowed")
+				if len(words) < 2 {
+					fmt.Println("not enough arguments")
+					continue
+				}
+				spams, err := strconv.Atoi(words[1])
+				if err != nil {
+					fmt.Printf("error while converting string: %v\n", err)
+				}
+				for i := 0; i < spams; i++ {
+					maliciousMessage := gamelogic.GetMaliciousLog()
+					err = pubsub.PublishGob(
+						connectionChan,
+						routing.ExchangePerilTopic,
+						routing.GameLogSlug + "." + username,
+						routing.GameLog{
+							CurrentTime: time.Now(),
+							Message: maliciousMessage,
+							Username: username,
+						},
+					)
+					if err != nil {
+						fmt.Printf("error while publishing spam: %v", err)
+					}
+				}
 			case "quit":
 				gamelogic.PrintQuit()
 				return
