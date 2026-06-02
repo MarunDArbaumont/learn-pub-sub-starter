@@ -63,7 +63,7 @@ func main() {
 		"war",
 		"war.#",
 		pubsub.SimpleQueueDurable,
-		handlerWar(gameState),
+		handlerWar(gameState, connectionChan),
 	)
 	if err != nil {
 		log.Fatalf("something went wrong while declaring and binding: %v", err)

@@ -26,12 +26,24 @@ func main() {
 	}
 	fmt.Println("Successfully connected")
 
-	_, _, err = pubsub.DeclareAndBind(
+	// _, _, err = pubsub.DeclareAndBind(
+	// 	connection,
+	// 	routing.ExchangePerilTopic,
+	// 	"game_logs",
+	// 	"game_logs.*",
+	// 	pubsub.SimpleQueueDurable,
+	// )
+	// if err != nil {
+	// 	log.Fatalf("something went wrong while declaring and binding: %v", err)
+	// }
+
+	err = pubsub.SubscribeGob(
 		connection,
-		routing.ExchangePerilDirect,
-		"game_logs",
-		"game_logs.*",
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		routing.GameLogSlug + ".*",
 		pubsub.SimpleQueueDurable,
+		handlerGameLog(),
 	)
 	if err != nil {
 		log.Fatalf("something went wrong while declaring and binding: %v", err)

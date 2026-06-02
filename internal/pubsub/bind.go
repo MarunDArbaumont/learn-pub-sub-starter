@@ -3,6 +3,8 @@ package pubsub
 import (
 	"fmt"
 	"encoding/json"
+	"encoding/gob"
+	"bytes"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
@@ -51,14 +53,54 @@ func DeclareAndBind(
 }
 
 func SubscribeJSON[T any](
-    conn *amqp.Connection,
-    exchange,
-    queueName,
-    key string,
-    queueType SimpleQueueType,
-    handler func(T) AckType,
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType SimpleQueueType,
+	handler func(T) AckType,
+	) error {
+	return subscribe[T](conn, exchange, queueName, key, simpleQueueType, handler, func(raw []byte) (T, error) {
+		var data T
+		if err := json.Unmarshal(raw, &data); err != nil {
+			var zero T
+			return zero, fmt.Errorf("Error unmarshalling JSON: %v", err)
+		}
+		return data, nil
+	})
+}
+
+func SubscribeGob[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType SimpleQueueType,
+	handler func(T) AckType,
+	) error {
+	return subscribe[T](conn, exchange, queueName, key, simpleQueueType, handler, func(raw []byte) (T, error) {
+		buffer := bytes.NewBuffer(raw)
+		dec := gob.NewDecoder(buffer)
+		var data T
+		err := dec.Decode(&data)
+		if err != nil {
+			var zero T
+			return zero, err
+		}
+		return data, nil
+	})
+}
+
+func subscribe[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType SimpleQueueType,
+	handler func(T) AckType,
+	unmarshaller func([]byte) (T, error),
 ) error {
-	channel, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	channel, queue, err := DeclareAndBind(conn, exchange, queueName, key, simpleQueueType)
 	if err != nil {
 		return fmt.Errorf("errror while declaring and binding: %v", err)
 	}
@@ -68,14 +110,15 @@ func SubscribeJSON[T any](
 		return fmt.Errorf("error while getting new delivery chan: %v", err)
 	}
 
-	go func() error {
+	go func() {
+		defer channel.Close()
 		for msg := range consume {
-			var data T
-			if err := json.Unmarshal(msg.Body, &data); err != nil {
-				return fmt.Errorf("Error unmarshalling JSON: %v", err)
+			data, err := unmarshaller(msg.Body)
+			if err != nil {
+				fmt.Printf("Error unmarshalling JSON: %v", err)
+				continue
 			}
 			ackOrNack := handler(data)
-			fmt.Printf("This was a %v\n", ackOrNack)
 			switch ackOrNack{
 			case Ack:
 				msg.Ack(false)
@@ -85,7 +128,7 @@ func SubscribeJSON[T any](
 				msg.Nack(false, false)
 			}
 		}
-		return nil
+		return
 	} ()
 	return nil
 }
